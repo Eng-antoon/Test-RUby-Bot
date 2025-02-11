@@ -1,3 +1,4 @@
+# client_bot.rb
 require 'telegram/bot'
 require_relative 'config'
 require_relative 'db'
@@ -14,17 +15,21 @@ module ClientBot
 
   def self.safe_edit_message(bot, message, text, reply_markup = nil)
     if message.respond_to?(:caption) && message.caption
-      bot.api.editMessageCaption(chat_id: message.chat.id,
-                                 message_id: message.message_id,
-                                 caption: text,
-                                 reply_markup: reply_markup,
-                                 parse_mode: "HTML")
+      bot.api.editMessageCaption(
+        chat_id: message.chat.id,
+        message_id: message.message_id,
+        caption: text,
+        reply_markup: reply_markup,
+        parse_mode: "HTML"
+      )
     else
-      bot.api.editMessageText(chat_id: message.chat.id,
-                              message_id: message.message_id,
-                              text: text,
-                              reply_markup: reply_markup,
-                              parse_mode: "HTML")
+      bot.api.editMessageText(
+        chat_id: message.chat.id,
+        message_id: message.message_id,
+        text: text,
+        reply_markup: reply_markup,
+        parse_mode: "HTML"
+      )
     end
   end
 
@@ -32,32 +37,35 @@ module ClientBot
     user = message.from
     sub = DB.get_subscription(user.id, "Client")
     chat_id = message.chat.id
+    $client_states[chat_id] ||= {}  # ensure state hash
     if sub.nil?
       bot.api.send_message(chat_id: chat_id, text: "أهلاً! يرجى إدخال رقم هاتفك للاشتراك (Client):")
-      $client_states[chat_id] = { state: SUBSCRIPTION_PHONE }
+      $client_states[chat_id][:state] = SUBSCRIPTION_PHONE
     elsif sub["client"].nil? || sub["client"].empty?
       bot.api.send_message(chat_id: chat_id, text: "يرجى إدخال اسم العميل الذي تمثله (مثال: بيبس):")
-      $client_states[chat_id] = { state: SUBSCRIPTION_CLIENT }
+      $client_states[chat_id][:state] = SUBSCRIPTION_CLIENT
     else
-      keyboard = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: [
-        [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "عرض المشاكل", callback_data: "menu_show_tickets") ]
-      ])
+      keyboard = Telegram::Bot::Types::InlineKeyboardMarkup.new(
+        inline_keyboard: [
+          [Telegram::Bot::Types::InlineKeyboardButton.new(text: "عرض المشاكل", callback_data: "menu_show_tickets")]
+        ]
+      )
       bot.api.send_message(chat_id: chat_id, text: "مرحباً #{user.first_name}", reply_markup: keyboard)
-      $client_states[chat_id] = { state: MAIN_MENU }
+      $client_states[chat_id][:state] = MAIN_MENU
     end
   end
 
   def self.handle_message(bot, message)
     chat_id = message.chat.id
-    state_info = $client_states[chat_id] || {}
+    $client_states[chat_id] ||= {}
+    state_info = $client_states[chat_id]
     case state_info[:state]
     when SUBSCRIPTION_PHONE
       phone = message.text.strip
       user = message.from
       DB.add_subscription(user.id, phone, "Client", "Client", nil,
                           user.username, user.first_name, user.last_name, chat_id)
-      bot.api.send_message(chat_id: chat_id,
-                           text: "تم استقبال رقم الهاتف. الآن، يرجى إدخال اسم العميل الذي تمثله (مثال: بيبس):")
+      bot.api.send_message(chat_id: chat_id, text: "تم استقبال رقم الهاتف. الآن، يرجى إدخال اسم العميل الذي تمثله (مثال: بيبس):")
       $client_states[chat_id][:state] = SUBSCRIPTION_CLIENT
     when SUBSCRIPTION_CLIENT
       client_name = message.text.strip
@@ -66,15 +74,19 @@ module ClientBot
       phone = (sub && sub["phone"] && sub["phone"] != "unknown") ? sub["phone"] : "unknown"
       DB.add_subscription(user.id, phone, "Client", "Client", client_name,
                           user.username, user.first_name, user.last_name, chat_id)
-      keyboard = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: [
-        [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "عرض المشاكل", callback_data: "menu_show_tickets") ]
-      ])
+      keyboard = Telegram::Bot::Types::InlineKeyboardMarkup.new(
+        inline_keyboard: [
+          [Telegram::Bot::Types::InlineKeyboardButton.new(text: "عرض المشاكل", callback_data: "menu_show_tickets")]
+        ]
+      )
       bot.api.send_message(chat_id: chat_id, text: "تم الاشتراك بنجاح كـ Client!", reply_markup: keyboard)
       $client_states[chat_id][:state] = MAIN_MENU
     else
-      keyboard = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: [
-        [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "عرض المشاكل", callback_data: "menu_show_tickets") ]
-      ])
+      keyboard = Telegram::Bot::Types::InlineKeyboardMarkup.new(
+        inline_keyboard: [
+          [Telegram::Bot::Types::InlineKeyboardButton.new(text: "عرض المشاكل", callback_data: "menu_show_tickets")]
+        ]
+      )
       bot.api.send_message(chat_id: chat_id, text: "الرجاء اختيار خيار:", reply_markup: keyboard)
       $client_states[chat_id][:state] = MAIN_MENU
     end
@@ -82,6 +94,7 @@ module ClientBot
 
   def self.handle_callback_query(bot, callback_query)
     chat_id = callback_query.message.chat.id
+    $client_states[chat_id] ||= {}
     data = callback_query.data
     case data
     when "menu_show_tickets"
@@ -96,13 +109,15 @@ module ClientBot
                  "<b>رقم الطلب:</b> #{ticket['order_id']}\n" +
                  "<b>الوصف:</b> #{ticket['issue_description']}\n" +
                  "<b>الحالة:</b> #{ticket['status']}"
-          keyboard = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: [
-            [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "حالياً", callback_data: "notify_pref|#{ticket['ticket_id']}|now") ],
-            [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "خلال 15 دقيقة", callback_data: "notify_pref|#{ticket['ticket_id']}|15") ],
-            [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "خلال 10 دقائق", callback_data: "notify_pref|#{ticket['ticket_id']}|10") ],
-            [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "حل المشكلة", callback_data: "solve|#{ticket['ticket_id']}") ],
-            [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "تجاهل", callback_data: "ignore|#{ticket['ticket_id']}") ]
-          ])
+          keyboard = Telegram::Bot::Types::InlineKeyboardMarkup.new(
+            inline_keyboard: [
+              [Telegram::Bot::Types::InlineKeyboardButton.new(text: "حالياً", callback_data: "notify_pref|#{ticket['ticket_id']}|now")],
+              [Telegram::Bot::Types::InlineKeyboardButton.new(text: "خلال 15 دقيقة", callback_data: "notify_pref|#{ticket['ticket_id']}|15")],
+              [Telegram::Bot::Types::InlineKeyboardButton.new(text: "خلال 10 دقائق", callback_data: "notify_pref|#{ticket['ticket_id']}|10")],
+              [Telegram::Bot::Types::InlineKeyboardButton.new(text: "حل المشكلة", callback_data: "solve|#{ticket['ticket_id']}")],
+              [Telegram::Bot::Types::InlineKeyboardButton.new(text: "تجاهل", callback_data: "ignore|#{ticket['ticket_id']}")]
+            ]
+          )
           if ticket['image_url'] && !ticket['image_url'].empty?
             bot.api.send_photo(chat_id: chat_id, photo: ticket['image_url'])
           end
@@ -144,7 +159,7 @@ module ClientBot
       else
         DB.update_ticket_status(ticket_id, "Client Ignored", { "action" => "client_ignored" })
         DB.update_ticket_status(ticket_id, "Client Responded", { "action" => "client_final_response", "message" => "ignored" })
-        notify_supervisors_client_response(ticket_id, ignored: true)
+        Notifier.notify_supervisors_client_response(ticket_id, ignored: true)
         safe_edit_message(bot, callback_query.message, "تم إرسال ردك (تم تجاهل التذكرة).")
       end
     else
@@ -158,13 +173,15 @@ module ClientBot
            "رقم الطلب: #{ticket['order_id']}\n" +
            "الوصف: #{ticket['issue_description']}\n" +
            "الحالة: #{ticket['status']}"
-    keyboard = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: [
-      [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "حالياً", callback_data: "notify_pref|#{ticket_id}|now") ],
-      [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "خلال 15 دقيقة", callback_data: "notify_pref|#{ticket_id}|15") ],
-      [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "خلال 10 دقائق", callback_data: "notify_pref|#{ticket_id}|10") ],
-      [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "حل المشكلة", callback_data: "solve|#{ticket_id}") ],
-      [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "تجاهل", callback_data: "ignore|#{ticket_id}") ]
-    ])
+    keyboard = Telegram::Bot::Types::InlineKeyboardMarkup.new(
+      inline_keyboard: [
+        [Telegram::Bot::Types::InlineKeyboardButton.new(text: "حالياً", callback_data: "notify_pref|#{ticket_id}|now")],
+        [Telegram::Bot::Types::InlineKeyboardButton.new(text: "خلال 15 دقيقة", callback_data: "notify_pref|#{ticket_id}|15")],
+        [Telegram::Bot::Types::InlineKeyboardButton.new(text: "خلال 10 دقائق", callback_data: "notify_pref|#{ticket_id}|10")],
+        [Telegram::Bot::Types::InlineKeyboardButton.new(text: "حل المشكلة", callback_data: "solve|#{ticket_id}")],
+        [Telegram::Bot::Types::InlineKeyboardButton.new(text: "تجاهل", callback_data: "ignore|#{ticket_id}")]
+      ]
+    )
     if ticket['image_url'] && !ticket['image_url'].empty?
       bot.api.send_photo(chat_id: message.chat.id, photo: ticket['image_url'])
     end
@@ -177,60 +194,21 @@ module ClientBot
            "رقم الطلب: #{ticket['order_id']}\n" +
            "الوصف: #{ticket['issue_description']}\n" +
            "الحالة: #{ticket['status']}"
-    keyboard = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: [
-      [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "حل المشكلة", callback_data: "solve|#{ticket_id}") ],
-      [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "تجاهل", callback_data: "ignore|#{ticket_id}") ]
-    ])
+    keyboard = Telegram::Bot::Types::InlineKeyboardMarkup.new(
+      inline_keyboard: [
+        [Telegram::Bot::Types::InlineKeyboardButton.new(text: "حل المشكلة", callback_data: "solve|#{ticket_id}")],
+        [Telegram::Bot::Types::InlineKeyboardButton.new(text: "تجاهل", callback_data: "ignore|#{ticket_id}")]
+      ]
+    )
     if ticket['image_url'] && !ticket['image_url'].empty?
       bot.api.send_photo(chat_id: message.chat.id, photo: ticket['image_url'])
     end
     safe_edit_message(bot, message, text, keyboard)
   end
 
-  def self.notify_supervisors_client_response(ticket_id, opts = {})
-    ticket = DB.get_ticket(ticket_id)
-    bot = Telegram::Bot::Client.new(Config::SUPERVISOR_BOT_TOKEN)
-    if opts[:ignored]
-      text = "<b>تنبيه:</b> تم تجاهل التذكرة ##{ticket_id} من قبل العميل.\n" +
-             "رقم الطلب: #{ticket['order_id']}\n" +
-             "الوصف: #{ticket['issue_description']}\n" +
-             "الحالة: #{ticket['status']}"
-      keyboard = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: [
-        [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "حل المشكلة", callback_data: "sup_resolve|#{ticket_id}") ]
-      ])
-    else
-      solution = opts[:solution] || ""
-      text = "<b>حل من العميل للتذكرة ##{ticket_id}</b>\n" +
-             "رقم الطلب: #{ticket['order_id']}\n" +
-             "الوصف: #{ticket['issue_description']}\n" +
-             "<b>الحل:</b> #{solution}\n" +
-             "الحالة: #{ticket['status']}"
-      keyboard = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: [
-        [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "إرسال للحالة إلى الوكيل", callback_data: "sendto_da|#{ticket_id}") ]
-      ])
-    end
-    DB.get_supervisors.each do |sup|
-      begin
-        if ticket['image_url'] && !ticket['image_url'].empty?
-          bot.api.send_photo(chat_id: sup["chat_id"],
-                             photo: ticket['image_url'],
-                             caption: text,
-                             reply_markup: keyboard,
-                             parse_mode: "HTML")
-        else
-          bot.api.send_message(chat_id: sup["chat_id"],
-                               text: text,
-                               reply_markup: keyboard,
-                               parse_mode: "HTML")
-        end
-      rescue => e
-        puts "Error notifying supervisor #{sup['chat_id']}: #{e}"
-      end
-    end
-  end
-
-  def self.client_bot_main
+  def self.run
     Telegram::Bot::Client.run(Config::CLIENT_BOT_TOKEN) do |bot|
+      bot.api.deleteWebhook
       bot.listen do |message|
         case message
         when Telegram::Bot::Types::Message
@@ -244,9 +222,5 @@ module ClientBot
         end
       end
     end
-  end
-
-  def self.run
-    client_bot_main
   end
 end

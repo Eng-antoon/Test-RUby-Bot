@@ -1,7 +1,9 @@
+# supervisor_bot.rb
 require 'telegram/bot'
 require 'json'
 require_relative 'db'
 require_relative 'config'
+require_relative 'notifier'
 
 module SupervisorBot
   $user_states = {}
@@ -119,11 +121,14 @@ module SupervisorBot
 
     if action == 'solve'
       DB.update_ticket_status(ticket_id, "Pending DA Action", {"action" => "supervisor_solution", "message" => response})
-      notify_da(ticket_id, response, false, bot)
+      # Notify DA using Notifier (which uses the DA bot token)
+      ticket = DB.get_ticket(ticket_id)
+      Notifier.notify_da(ticket)
       bot.api.send_message(chat_id: message.chat.id, text: "تم إرسال الحل إلى الوكيل.")
     elsif action == 'moreinfo'
       DB.update_ticket_status(ticket_id, "Pending DA Response", {"action" => "request_more_info", "message" => response})
-      notify_da(ticket_id, response, true, bot)
+      ticket = DB.get_ticket(ticket_id)
+      Notifier.notify_da(ticket)
       bot.api.send_message(chat_id: message.chat.id, text: "تم إرسال الطلب إلى الوكيل.")
     end
 
@@ -131,66 +136,10 @@ module SupervisorBot
     send_main_menu(bot, message.chat.id)
   end
 
-  def self.notify_da(ticket_id, message_text, info_request, bot)
-    ticket = DB.get_ticket(ticket_id)
-    da_id = ticket['da_id']
-    if da_id.nil?
-      puts "لا يوجد وكيل معين للتذكرة."
-      return
-    end
-    da_sub = DB.get_subscription(da_id, "DA")
-    return if da_sub.nil?
-    if info_request
-      text = "<b>طلب معلومات إضافية للتذكرة ##{ticket_id}</b>\n" \
-             "رقم الطلب: #{ticket['order_id']}\n" \
-             "الوصف: #{ticket['issue_description']}\n" \
-             "الحالة: #{ticket['status']}\n" \
-             "المعلومات المطلوبة: #{message_text}"
-      keyboard = [
-        [Telegram::Bot::Types::InlineKeyboardButton.new(text: "تطبيق المعلومات الإضافية", callback_data: "da_moreinfo|#{ticket_id}")]
-      ]
-    else
-      text = "<b>حل للمشكلة للتذكرة ##{ticket_id}</b>\n" \
-             "رقم الطلب: #{ticket['order_id']}\n" \
-             "الوصف: #{ticket['issue_description']}\n" \
-             "الحالة: #{ticket['status']}\n" \
-             "الحل: #{message_text}"
-      keyboard = [
-        [Telegram::Bot::Types::InlineKeyboardButton.new(text: "إغلاق التذكرة", callback_data: "close|#{ticket_id}")]
-      ]
-    end
-    markup = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: keyboard)
-    if ticket['image_url'] && !ticket['image_url'].empty?
-      bot.api.send_photo(chat_id: da_sub['chat_id'], photo: ticket['image_url'], caption: text, reply_markup: markup, parse_mode: 'HTML')
-    else
-      bot.api.send_message(chat_id: da_sub['chat_id'], text: text, reply_markup: markup, parse_mode: 'HTML')
-    end
-  end
-
   def self.send_to_client(ticket_id, bot, chat_id)
     ticket = DB.get_ticket(ticket_id)
-    client_name = ticket['client']
-    clients = DB.get_clients_by_name(client_name)
-    text = "<b>تذكرة من المشرف</b>\n" \
-           "تذكرة ##{ticket['ticket_id']}\n" \
-           "رقم الطلب: #{ticket['order_id']}\n" \
-           "الوصف: #{ticket['issue_description']}\n" \
-           "الحالة: #{ticket['status']}"
-    keyboard = [
-      [
-        Telegram::Bot::Types::InlineKeyboardButton.new(text: "حالياً", callback_data: "notify_pref|#{ticket['ticket_id']}|now"),
-        Telegram::Bot::Types::InlineKeyboardButton.new(text: "خلال 15 دقيقة", callback_data: "notify_pref|#{ticket['ticket_id']}|15"),
-        Telegram::Bot::Types::InlineKeyboardButton.new(text: "خلال 10 دقائق", callback_data: "notify_pref|#{ticket['ticket_id']}|10")
-      ]
-    ]
-    markup = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: keyboard)
-    clients.each do |client|
-      if ticket['image_url'] && !ticket['image_url'].empty?
-        bot.api.send_photo(chat_id: client['chat_id'], photo: ticket['image_url'], caption: text, reply_markup: markup, parse_mode: 'HTML')
-      else
-        bot.api.send_message(chat_id: client['chat_id'], text: text, reply_markup: markup, parse_mode: 'HTML')
-      end
-    end
+    Notifier.notify_client(ticket)
+    bot.api.send_message(chat_id: chat_id, text: "تم إرسال التذكرة إلى العميل.")
   end
 
   def self.process_callback_query(bot, callback_query)
@@ -203,19 +152,20 @@ module SupervisorBot
       tickets = DB.get_all_open_tickets
       if tickets.any?
         tickets.each do |ticket|
-          text = "<b>تذكرة ##{ticket['ticket_id']}</b>\n" \
-                 "رقم الطلب: #{ticket['order_id']}\n" \
-                 "العميل: #{ticket['client']}\n" \
-                 "الوصف: #{ticket['issue_description']}\n" \
+          text = "<b>تذكرة ##{ticket['ticket_id']}</b>\n" +
+                 "رقم الطلب: #{ticket['order_id']}\n" +
+                 "العميل: #{ticket['client']}\n" +
+                 "الوصف: #{ticket['issue_description']}\n" +
                  "الحالة: #{ticket['status']}"
           keyboard = [
             [Telegram::Bot::Types::InlineKeyboardButton.new(text: "عرض التفاصيل", callback_data: "view|#{ticket['ticket_id']}")]
           ]
           markup = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: keyboard)
           if ticket['image_url'] && !ticket['image_url'].empty?
-            bot.api.send_photo(chat_id: chat_id, photo: ticket['image_url'])
+            bot.api.send_photo(chat_id: chat_id, photo: ticket['image_url'], caption: text, reply_markup: markup, parse_mode: "HTML")
+          else
+            safe_edit_message(bot, callback_query, text, markup)
           end
-          safe_edit_message(bot, callback_query, text, markup)
         end
       else
         safe_edit_message(bot, callback_query, "لا توجد تذاكر مفتوحة حالياً.")
@@ -241,13 +191,13 @@ module SupervisorBot
           rescue
             logs = "لا توجد سجلات إضافية."
           end
-          text = "<b>تفاصيل التذكرة ##{ticket['ticket_id']}</b>\n" \
-                 "رقم الطلب: #{ticket['order_id']}\n" \
-                 "العميل: #{ticket['client']}\n" \
-                 "الوصف: #{ticket['issue_description']}\n" \
-                 "سبب المشكلة: #{ticket['issue_reason']}\n" \
-                 "نوع المشكلة: #{ticket['issue_type']}\n" \
-                 "الحالة: #{ticket['status']}\n\n" \
+          text = "<b>تفاصيل التذكرة ##{ticket['ticket_id']}</b>\n" +
+                 "رقم الطلب: #{ticket['order_id']}\n" +
+                 "العميل: #{ticket['client']}\n" +
+                 "الوصف: #{ticket['issue_description']}\n" +
+                 "سبب المشكلة: #{ticket['issue_reason']}\n" +
+                 "نوع المشكلة: #{ticket['issue_type']}\n" +
+                 "الحالة: #{ticket['status']}\n\n" +
                  "السجلات:\n#{logs}"
           keyboard = []
           keyboard << Telegram::Bot::Types::InlineKeyboardButton.new(text: "إرسال للحالة إلى الوكيل", callback_data: "sendto_da|#{ticket_id}") if ticket["status"] == "Client Responded"
@@ -283,12 +233,8 @@ module SupervisorBot
 
       elsif data.start_with?("sendclient|")
         ticket_id = data.split("|")[1].to_i
-        keyboard = [
-          Telegram::Bot::Types::InlineKeyboardButton.new(text: "نعم", callback_data: "confirm_sendclient|#{ticket_id}"),
-          Telegram::Bot::Types::InlineKeyboardButton.new(text: "لا", callback_data: "cancel_sendclient|#{ticket_id}")
-        ]
-        markup = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: [keyboard])
-        safe_edit_message(bot, callback_query, "هل أنت متأكد من إرسال التذكرة إلى العميل؟", markup)
+        send_to_client(ticket_id, bot, chat_id)
+        safe_edit_message(bot, callback_query, "تم إرسال التذكرة إلى العميل.")
         set_state(user_id, MAIN_MENU)
 
       elsif data.start_with?("confirm_sendclient|")
@@ -330,7 +276,8 @@ module SupervisorBot
         end
         client_solution ||= "لا يوجد حل من العميل."
         DB.update_ticket_status(ticket_id, "Pending DA Action", {"action" => "supervisor_forward", "message" => client_solution})
-        notify_da(ticket_id, client_solution, false, bot)
+        ticket = DB.get_ticket(ticket_id)
+        Notifier.notify_da(ticket)
         safe_edit_message(bot, callback_query, "تم إرسال التذكرة إلى الوكيل.")
         set_state(user_id, MAIN_MENU)
 
@@ -347,6 +294,7 @@ module SupervisorBot
 
   def self.run
     Telegram::Bot::Client.run(Config::SUPERVISOR_BOT_TOKEN) do |bot|
+      bot.api.deleteWebhook
       bot.listen do |message|
         case message
         when Telegram::Bot::Types::Message
