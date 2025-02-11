@@ -1,7 +1,7 @@
 require 'sqlite3'
 require 'json'
 require 'time'
-require_relative '../config/config'
+require_relative 'config'
 
 module DB
   def self.get_connection
@@ -49,13 +49,13 @@ module DB
     db.execute("INSERT OR REPLACE INTO subscriptions 
                 (user_id, role, bot, phone, client, username, first_name, last_name, chat_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                user_id, role, bot, phone, client, username, first_name, last_name, chat_id)
+                [user_id, role, bot, phone, client, username, first_name, last_name, chat_id])
     db.close
   end
 
   def self.get_subscription(user_id, bot)
     db = get_connection
-    result = db.get_first_row("SELECT * FROM subscriptions WHERE user_id = ? AND bot = ?", user_id, bot)
+    result = db.get_first_row("SELECT * FROM subscriptions WHERE user_id = ? AND bot = ?", [user_id, bot])
     db.close
     result
   end
@@ -73,7 +73,7 @@ module DB
     db.execute("INSERT INTO tickets 
                 (order_id, issue_description, issue_reason, issue_type, client, image_url, status, da_id, logs)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                order_id, issue_description, issue_reason, issue_type, client, image_url, status, da_id, log_entry)
+                [order_id, issue_description, issue_reason, issue_type, client, image_url, status, da_id, log_entry])
     ticket_id = db.last_insert_row_id
     db.close
     ticket_id
@@ -81,7 +81,7 @@ module DB
 
   def self.get_ticket(ticket_id)
     db = get_connection
-    result = db.get_first_row("SELECT * FROM tickets WHERE ticket_id = ?", ticket_id)
+    result = db.get_first_row("SELECT * FROM tickets WHERE ticket_id = ?", [ticket_id])
     db.close
     result
   end
@@ -96,17 +96,17 @@ module DB
   def self.update_ticket_status(ticket_id, new_status, log_entry)
     log_entry["timestamp"] = Time.now.iso8601
     db = get_connection
-    current_logs = db.get_first_value("SELECT logs FROM tickets WHERE ticket_id = ?", ticket_id)
+    current_logs = db.get_first_value("SELECT logs FROM tickets WHERE ticket_id = ?", [ticket_id])
     logs = current_logs && !current_logs.empty? ? JSON.parse(current_logs) : []
     logs << log_entry
     logs_str = logs.to_json
-    db.execute("UPDATE tickets SET status = ?, logs = ? WHERE ticket_id = ?", new_status, logs_str, ticket_id)
+    db.execute("UPDATE tickets SET status = ?, logs = ? WHERE ticket_id = ?", [new_status, logs_str, ticket_id])
     db.close
   end
 
   def self.search_tickets_by_order(order_id)
     db = get_connection
-    result = db.execute("SELECT * FROM tickets WHERE order_id LIKE ?", "%#{order_id}%")
+    result = db.execute("SELECT * FROM tickets WHERE order_id LIKE ?", ["%#{order_id}%"])
     db.close
     result
   end
@@ -129,7 +129,7 @@ module DB
 
   def self.get_clients_by_name(client_name)
     db = get_connection
-    result = db.execute("SELECT * FROM subscriptions WHERE role = 'Client' AND client = ?", client_name)
+    result = db.execute("SELECT * FROM subscriptions WHERE role = 'Client' AND client = ?", [client_name])
     db.close
     result
   end
@@ -137,9 +137,9 @@ module DB
   def self.get_users_by_role(role, client = nil)
     db = get_connection
     if client
-      result = db.execute("SELECT * FROM subscriptions WHERE role = ? AND client = ?", role.capitalize, client)
+      result = db.execute("SELECT * FROM subscriptions WHERE role = ? AND client = ?", [role.capitalize, client])
     else
-      result = db.execute("SELECT * FROM subscriptions WHERE role = ?", role.capitalize)
+      result = db.execute("SELECT * FROM subscriptions WHERE role = ?", [role.capitalize])
     end
     db.close
     result
@@ -150,8 +150,7 @@ module DB
   end
 end
 
-# If run directly, initialize the database:
 if __FILE__ == $0
-  init_db
+  DB.init_db
   puts "Database initialized."
 end

@@ -1,23 +1,11 @@
 #!/usr/bin/env ruby
-# webapp.rb
-#
-# This file implements a simple web interface for the Issue Resolution project
-# using Sinatra. It displays pages for Tickets, Ticket Activity, and Subscriptions.
-#
-# Usage:
-#   ruby webapp.rb
-#
-# Then open http://localhost:5000 in your browser.
-
 require 'sinatra'
 require 'json'
 require_relative 'db'
 
-# Set Sinatra to listen on port 5000 and bind to all interfaces.
 set :port, 5000
 set :bind, '0.0.0.0'
 
-# --- Common CSS style shared by all pages ---
 COMMON_STYLE = <<~CSS
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600&display=swap');
@@ -129,8 +117,6 @@ COMMON_STYLE = <<~CSS
     }
   </style>
 CSS
-
-# --- Templates defined as Ruby string constants ---
 
 HOME_TEMPLATE = <<~HTML
   <!doctype html>
@@ -296,23 +282,18 @@ ACTIVITY_TEMPLATE = <<~HTML
   </html>
 HTML
 
-# --- Sinatra Routes ---
-
-# Home page
 get '/' do
   HOME_TEMPLATE
 end
 
-# Tickets listing page
 get '/tickets' do
-  tickets = Db.get_all_tickets
+  tickets = DB.get_all_tickets
   erb TICKETS_TEMPLATE, locals: { tickets: tickets }
 end
 
-# Ticket activity page: displays JSON logs (pretty-printed) and image if present.
 get '/ticket/:ticket_id/activity' do
   ticket_id = params[:ticket_id].to_i
-  ticket = Db.get_ticket(ticket_id)
+  ticket = DB.get_ticket(ticket_id)
   halt 404, "Ticket not found" if ticket.nil?
   logs = begin
     logs_list = JSON.parse(ticket['logs'] || '[]')
@@ -323,8 +304,7 @@ get '/ticket/:ticket_id/activity' do
   erb ACTIVITY_TEMPLATE, locals: { ticket_id: ticket_id, logs: logs, image_url: ticket['image_url'] }
 end
 
-# Subscriptions listing page
 get '/subscriptions' do
-  subs = Db.get_all_subscriptions
+  subs = DB.get_all_subscriptions
   erb SUBSCRIPTIONS_TEMPLATE, locals: { subs: subs }
 end

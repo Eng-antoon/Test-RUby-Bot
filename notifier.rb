@@ -1,9 +1,8 @@
 require 'telegram/bot'
-require_relative '../config/config'
-require_relative '../db/db'
+require_relative 'config'
+require_relative 'db'
 
 module Notifier
-  # Standalone bot clients for sending notifications:
   DA_BOT         = Telegram::Bot::Client.new(Config::DA_BOT_TOKEN)
   SUPERVISOR_BOT = Telegram::Bot::Client.new(Config::SUPERVISOR_BOT_TOKEN)
   CLIENT_BOT     = Telegram::Bot::Client.new(Config::CLIENT_BOT_TOKEN)
@@ -16,23 +15,23 @@ module Notifier
                 "رقم الأوردر: #{ticket['order_id']}\n" +
                 "الوصف: #{ticket['issue_description']}"
       markup = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: [
-        [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "عرض التفاصيل", callback_data: "view|#{ticket['ticket_id']}") ]
+        [Telegram::Bot::Types::InlineKeyboardButton.new(text: "عرض التفاصيل", callback_data: "view|#{ticket['ticket_id']}")]
       ])
       begin
         if ticket['image_url'] && !ticket['image_url'].empty?
-          SUPERVISOR_BOT.api.sendPhoto(chat_id: sup["chat_id"],
-                                       photo: ticket['image_url'],
-                                       caption: message,
-                                       reply_markup: markup,
-                                       parse_mode: "HTML")
-        else
-          SUPERVISOR_BOT.api.sendMessage(chat_id: sup["chat_id"],
-                                         text: message,
+          SUPERVISOR_BOT.api.send_photo(chat_id: sup["chat_id"],
+                                         photo: ticket['image_url'],
+                                         caption: message,
                                          reply_markup: markup,
                                          parse_mode: "HTML")
+        else
+          SUPERVISOR_BOT.api.send_message(chat_id: sup["chat_id"],
+                                          text: message,
+                                          reply_markup: markup,
+                                          parse_mode: "HTML")
         end
       rescue => e
-        puts "Error notifying supervisor: #{e}"
+        puts "Error notifying supervisor #{sup['chat_id']}: #{e}"
       end
     end
   end
@@ -44,20 +43,20 @@ module Notifier
                 "الوصف: #{ticket['issue_description']}\n" +
                 "النوع: #{ticket['issue_type']}"
       markup = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: [
-        [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "عرض التفاصيل", callback_data: "client_view|#{ticket['ticket_id']}") ]
+        [Telegram::Bot::Types::InlineKeyboardButton.new(text: "عرض التفاصيل", callback_data: "client_view|#{ticket['ticket_id']}")]
       ])
       begin
         if ticket['image_url'] && !ticket['image_url'].empty?
-          CLIENT_BOT.api.sendPhoto(chat_id: client["chat_id"],
-                                   photo: ticket['image_url'],
-                                   caption: message,
-                                   reply_markup: markup,
-                                   parse_mode: "HTML")
+          CLIENT_BOT.api.send_photo(chat_id: client["chat_id"],
+                                    photo: ticket['image_url'],
+                                    caption: message,
+                                    reply_markup: markup,
+                                    parse_mode: "HTML")
         else
-          CLIENT_BOT.api.sendMessage(chat_id: client["chat_id"],
-                                     text: message,
-                                     reply_markup: markup,
-                                     parse_mode: "HTML")
+          CLIENT_BOT.api.send_message(chat_id: client["chat_id"],
+                                      text: message,
+                                      reply_markup: markup,
+                                      parse_mode: "HTML")
         end
       rescue => e
         puts "Error notifying client: #{e}"
@@ -72,20 +71,20 @@ module Notifier
                 "الوصف: #{ticket['issue_description']}\n" +
                 "الحالة: #{ticket['status']}"
       markup = Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: [
-        [ Telegram::Bot::Types::InlineKeyboardButton.new(text: "عرض التفاصيل", callback_data: "da_view|#{ticket['ticket_id']}") ]
+        [Telegram::Bot::Types::InlineKeyboardButton.new(text: "عرض التفاصيل", callback_data: "da_view|#{ticket['ticket_id']}")]
       ])
       begin
         if ticket['image_url'] && !ticket['image_url'].empty?
-          DA_BOT.api.sendPhoto(chat_id: da_user["chat_id"],
-                               photo: ticket['image_url'],
-                               caption: message,
-                               reply_markup: markup,
-                               parse_mode: "HTML")
+          DA_BOT.api.send_photo(chat_id: da_user["chat_id"],
+                                photo: ticket['image_url'],
+                                caption: message,
+                                reply_markup: markup,
+                                parse_mode: "HTML")
         else
-          DA_BOT.api.sendMessage(chat_id: da_user["chat_id"],
-                                 text: message,
-                                 reply_markup: markup,
-                                 parse_mode: "HTML")
+          DA_BOT.api.send_message(chat_id: da_user["chat_id"],
+                                  text: message,
+                                  reply_markup: markup,
+                                  parse_mode: "HTML")
         end
       rescue => e
         puts "Error notifying DA: #{e}"
